@@ -7,14 +7,20 @@ Original file is located at
     https://colab.research.google.com/drive/1SDDgF4l1ubEqT9of7wu6Vj22lt0iaOQA
 """
 
+#This code will look at a database of passengers who were on the Titanic at the time of the tragedy.
+#In order to predict whether the passenger will survive or not, two methods will be used - decision tree and random forest.
+#After comparing the results of both methods, select the best one and use it for prediction.
+
 #Import the libraries necessary for work
 import pandas as pd
 import numpy as np
 from sklearn import tree
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.model_selection import GridSearchCV
 from sklearn.metrics import precision_score
 from sklearn.metrics import recall_score
+import matplotlib.pyplot as plt
 
 #Load the training data set
 train_data=pd.read_csv('/content/train.csv')
@@ -27,34 +33,79 @@ train_data.head()
 X=train_data.drop(['PassengerId','Survived','Name','Ticket','Cabin'], axis=1)
 X=pd.get_dummies(X)
 X=X.fillna({'Age': X.Age.median()})
+X=X.drop(['Sex_male'], axis=1)
 Y=train_data.Survived
 
 #Divide the training subsamples into training and test data sets
 X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.33, random_state = 42)
 
 #Create a decision tree model
-parametrs={'criterion':['gini', 'entropy'], 'max_depth': range(1, 30)}
+parametrs={'criterion':['gini', 'entropy'], 'max_depth': range(1, 10), 'min_samples_split': range(30, 50), 'min_samples_leaf': range (10,20)}
 clf=tree.DecisionTreeClassifier()
 grid_search_cv_clf=GridSearchCV(clf, parametrs)
 grid_search_cv_clf.fit(X_train, Y_train)
 grid_search_cv_clf.best_params_
-best_clf=grid_search_cv_clf.best_estimator_
+
+#Use optimal parameters for the model and train the model on the training set
+best_clf=tree.DecisionTreeClassifier(criterion = 'gini',
+ max_depth=8,
+ min_samples_leaf=13,
+ min_samples_split=37)
 best_clf.fit(X_train, Y_train)
 best_clf.fit(X_test, Y_test)
 
-#Testing the model
+#Visualize the decision tree model
+plt.figure(figsize=(30, 10))
+tree.plot_tree(best_clf, fontsize=10, feature_names=list(X_test), filled=True)
+plt.show()
+
+#Testing the decision tree model
 Y_pred_prob=best_clf.predict_proba(X_test)
 Y_pred=np.where(Y_pred_prob[:, 1]>0.7, 1, 0)
-precision_score(Y_test,Y_pred)
+tree_prediction_precision=precision_score(Y_test,Y_pred)
+tree_prediction_recall=recall_score(Y_test,Y_pred)
 
-recall_score(Y_test,Y_pred)
+#Create the random forest model
+clf_rf=RandomForestClassifier()
+parametrs={'n_estimators':range(10, 20), 'max_depth': range(5, 10), 'min_samples_leaf': range(1, 10), 'min_samples_split': (1, 10)}
+grid_search_cv_clf_rf=GridSearchCV(clf_rf, parametrs, cv=5)
+grid_search_cv_clf_rf.fit(X_train, Y_train)
+grid_search_cv_clf_rf.best_params_
+
+#Use optimal parameters for the model and train the model on the training set
+best_clf_rf=RandomForestClassifier(max_depth=8,
+                                        min_samples_leaf=3,
+                                        min_samples_split=10,
+                                        n_estimators=16)
+best_clf_rf.fit(X_train, Y_train)
+best_clf_rf.fit(X_test, Y_test)
+
+#Testing the random forest model
+Y_pred_prob_new=best_clf_rf.predict_proba(X_test)
+Y_pred_new=np.where(Y_pred_prob_new[:, 1]>0.7, 1, 0)
+forest_prediction_precision=precision_score(Y_test,Y_pred_new)
+forest_prediction_recall=recall_score(Y_test,Y_pred_new)
+
+#Choose a method with a higher level of quality metrics
+choice_of_method=pd.DataFrame([['random forest', forest_prediction_precision, forest_prediction_recall],
+                               ['decision tree', tree_prediction_precision, tree_prediction_recall]],
+                               columns=['method','precision', 'recall'])
+choice_of_method
+
+#The random forest model showed better results. Accordingly, for further work you need to use this model
+
+#Study which signs have the greatest impact on passenger survival
+feature_importances = best_clf_rf.feature_importances_
+feature_importances_df=pd.DataFrame({'features': list(X_train), 'feature_importances':feature_importances})
+feature_importances_df.sort_values('feature_importances', ascending=False)
 
 #Load and transform the test data set
 test_data=pd.read_csv('/content/test.csv')
 X_new=test_data.drop(['PassengerId','Name','Ticket','Cabin'], axis=1)
 X_new=pd.get_dummies(X_new)
 X_new=X_new.fillna({'Age': X_new.Age.median(), 'Fare': X_new.Fare.median()})
+X_new=X_new.drop(['Sex_male'], axis=1)
 
 #Use the developed model to predict an unknown feature
-Y_new=best_clf.predict(X_new)
+Y_new=best_clf_rf.predict(X_new)
 Y_new
